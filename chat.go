@@ -15,26 +15,16 @@ import (
 func main() {
 	godotenv.Load()
 
-  var username string
+	var username string
 
-  // If no username specified, ask for one
-  if len(os.Args) < 2 {
+	// If no username specified, ask for one
+	if len(os.Args) < 2 {
 		fmt.Println("Type your username")
 		reader := bufio.NewReader(os.Stdin)
 		username, _ = reader.ReadString('\n')
 		username = strings.Replace(username, "\n", "", -1)
-  } else {
-  	username = os.Args[1]
-  }
-
-	opts := &ably.ClientOptions{
-		AuthOptions: ably.AuthOptions{
-			// If you have an Ably account, you can find
-			// your API key at https://www.ably.io/accounts/any/apps/any/app_keys
-			Key: os.Getenv("ABLY_KEY"),
-		},
-		ClientID: username,
-		// NoEcho:   true, // Uncomment to stop messages you send from being sent back
+	} else {
+		username = os.Args[1]
 	}
 
 	// Connect to Ably using the API key and ClientID specified above
