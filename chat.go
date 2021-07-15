@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/ably/ably-go/ably"
-	"github.com/ably/ably-go/ably/proto"
 	"github.com/joho/godotenv"
 )
 
@@ -30,7 +29,7 @@ func main() {
 	// Connect to Ably using the API key and ClientID specified above
 	client, err := ably.NewRealtime(
 		ably.WithKey(os.Getenv("ABLY_KEY")),
-		// ably.WithEchoMessages(true), // Uncomment to stop messages you send from being sent back
+		// ably.WithEchoMessages(false), // Uncomment to stop messages you send from being sent back
 		ably.WithClientID(username))
 	if err != nil {
 		panic(err)
@@ -48,6 +47,8 @@ func main() {
 
 	subscribe(channel)
 
+	subscribePresence(channel)
+
 	// Start the goroutine to allow for publishing messages
 	publishing(channel)
 }
@@ -57,9 +58,15 @@ func getHistory(channel *ably.RealtimeChannel) {
 	// History for any missed messages. By default a channel
 	// will keep 2 minutes of history available, but this can
 	// be extended to 48 hours
-	page, err := channel.History(nil)
-	for ; err == nil && page != nil; page, err = page.Next() {
-		for _, msg := range page.Messages() {
+	pages, err := channel.History().Pages(context.Background())
+	if err != nil || pages == nil {
+		return
+	}
+
+	hasHistory := true
+
+	for ; hasHistory; hasHistory = pages.Next(context.Background()) {
+		for _, msg := range pages.Items() {
 			fmt.Printf("Previous message from %v: '%v'\n", msg.ClientID, msg.Data)
 		}
 	}
@@ -74,12 +81,14 @@ func subscribe(channel *ably.RealtimeChannel) {
 		err := fmt.Errorf("subscribing to channel: %w", err)
 		fmt.Println(err)
 	}
+}
 
+func subscribePresence(channel *ably.RealtimeChannel) {
 	// Subscribe to presence events (people entering and leaving) on the channel
 	_, pErr := channel.Presence.SubscribeAll(context.Background(), func(msg *ably.PresenceMessage) {
-		if msg.Action == proto.PresenceEnter {
+		if msg.Action == ably.PresenceActionEnter {
 			fmt.Printf("%v has entered the chat\n", msg.ClientID)
-		} else if msg.Action == proto.PresenceLeave {
+		} else if msg.Action == ably.PresenceActionLeave {
 			fmt.Printf("%v has left the chat\n", msg.ClientID)
 		}
 	})
@@ -95,7 +104,6 @@ func publishing(channel *ably.RealtimeChannel) {
 	for {
 		text, _ := reader.ReadString('\n')
 		text = strings.ReplaceAll(text, "\n", "")
-
 		// Publish the message typed in to the Ably Channel
 		err := channel.Publish(context.Background(), "message", text)
 		// await confirmation that message was received by Ably
