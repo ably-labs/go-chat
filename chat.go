@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -14,30 +15,23 @@ import (
 func main() {
 	godotenv.Load()
 
-  var username string
+	var username string
 
-  // If no username specified, ask for one
-  if len(os.Args) < 2 {
+	// If no username specified, ask for one
+	if len(os.Args) < 2 {
 		fmt.Println("Type your username")
 		reader := bufio.NewReader(os.Stdin)
 		username, _ = reader.ReadString('\n')
 		username = strings.Replace(username, "\n", "", -1)
-  } else {
-  	username = os.Args[1]
-  }
-
-	opts := &ably.ClientOptions{
-		AuthOptions: ably.AuthOptions{
-			// If you have an Ably account, you can find
-			// your API key at https://www.ably.io/accounts/any/apps/any/app_keys
-			Key: os.Getenv("ABLY_KEY"),
-		},
-		ClientID: username,
-		// NoEcho:   true, // Uncomment to stop messages you send from being sent back
+	} else {
+		username = os.Args[1]
 	}
 
 	// Connect to Ably using the API key and ClientID specified above
-	client, err := ably.NewRealtimeClient(opts)
+	client, err := ably.NewRealtime(
+		ably.WithKey(os.Getenv("ABLY_KEY")),
+		// ably.WithEchoMessages(true), // Uncomment to stop messages you send from being sent back
+		ably.WithClientID(username))
 	if err != nil {
 		panic(err)
 	}
@@ -48,19 +42,17 @@ func main() {
 	channel := client.Channels.Get("chat")
 
 	// Enter the Presence set of the channel
-	channel.Presence.Enter("")
+	channel.Presence.Enter(context.Background(), "")
 
-	getHistory(*channel)
+	getHistory(channel)
 
-  // Subscribe to messages and presence messages
-	go subscribe(*channel)
-	go presenceSubscribe(*channel)
+	subscribe(channel)
 
 	// Start the goroutine to allow for publishing messages
-	publishing(*channel)
+	publishing(channel)
 }
 
-func getHistory(channel ably.RealtimeChannel) {
+func getHistory(channel *ably.RealtimeChannel) {
 	// Before subscribing for messages, check the channel's
 	// History for any missed messages. By default a channel
 	// will keep 2 minutes of history available, but this can
@@ -73,47 +65,43 @@ func getHistory(channel ably.RealtimeChannel) {
 	}
 }
 
-func subscribe(channel ably.RealtimeChannel) {
-	// Initiate a subscription to the channel
-	sub, err := channel.Subscribe()
-	if err != nil {
-		panic(err)
-	}
-
-	// For each message we receive from the subscription, print it out
-	for msg := range sub.MessageChannel() {
+func subscribe(channel *ably.RealtimeChannel) {
+	// Subscribe to messages sent on the channel
+	_, err := channel.SubscribeAll(context.Background(), func(msg *ably.Message) {
 		fmt.Printf("Received message from %v: '%v'\n", msg.ClientID, msg.Data)
+	})
+	if err != nil {
+		err := fmt.Errorf("subscribing to channel: %w", err)
+		fmt.Println(err)
 	}
-}
 
-func presenceSubscribe(channel ably.RealtimeChannel) {
 	// Subscribe to presence events (people entering and leaving) on the channel
-	presenceSub, presenceErr := channel.Presence.Subscribe()
-	if presenceErr != nil {
-		panic(presenceErr)
-	}
-
-	for msg := range presenceSub.PresenceChannel() {
-		if msg.State == proto.PresenceEnter {
+	_, pErr := channel.Presence.SubscribeAll(context.Background(), func(msg *ably.PresenceMessage) {
+		if msg.Action == proto.PresenceEnter {
 			fmt.Printf("%v has entered the chat\n", msg.ClientID)
-		} else if msg.State == proto.PresenceLeave {
+		} else if msg.Action == proto.PresenceLeave {
 			fmt.Printf("%v has left the chat\n", msg.ClientID)
 		}
+	})
+	if pErr != nil {
+		err := fmt.Errorf("subscribing to presence in channel: %w", pErr)
+		fmt.Println(err)
 	}
 }
 
-func publishing(channel ably.RealtimeChannel) {
+func publishing(channel *ably.RealtimeChannel) {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
 		text, _ := reader.ReadString('\n')
-		text = strings.Replace(text, "\n", "", -1)
+		text = strings.ReplaceAll(text, "\n", "")
 
 		// Publish the message typed in to the Ably Channel
-		res, err := channel.Publish("message", text)
+		err := channel.Publish(context.Background(), "message", text)
 		// await confirmation that message was received by Ably
-		if err = res.Wait(); err != nil {
-			panic(err)
+		if err != nil {
+			err := fmt.Errorf("publishing to channel: %w", err)
+			fmt.Println(err)
 		}
 	}
 }
