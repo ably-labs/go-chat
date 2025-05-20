@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> This repository uses the Ably Pub/Sub approach for building chat apps. We now offer Ably Chat—a new family of SDKs and APIs that streamline development and manage realtime chat complexity for you. For a modern, easier way to create chat experiences, visit our [Ably Chat documentation](https://ably.com/docs/chat).
+
 # Ably Go Terminal Chat
 
 Basic Go chat program using Ably for networking.
